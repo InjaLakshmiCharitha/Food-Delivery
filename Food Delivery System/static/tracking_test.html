@@ -1,0 +1,166 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Food Delivery Live Tracking</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 750px;
+            margin: 30px auto;
+            padding: 0 16px;
+        }
+
+        input, button {
+            padding: 10px;
+            margin: 5px 0;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        button {
+            cursor: pointer;
+        }
+
+        #status {
+            font-weight: bold;
+            margin: 12px 0;
+        }
+
+        #output {
+            background: #f2f2f2;
+            padding: 14px;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            min-height: 150px;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>Food Delivery Live Tracking</h2>
+
+    <label for="token">Access Token</label>
+    <input
+        id="token"
+        type="password"
+        placeholder="Paste your JWT access token"
+        autocomplete="off"
+    >
+
+    <label for="orderId">Order ID</label>
+    <input id="orderId" type="number" min="1" value="1">
+
+    <button type="button" onclick="connectTracking()">Connect</button>
+    <button type="button" onclick="disconnectTracking()">Disconnect</button>
+
+    <p id="status">Status: Not connected</p>
+
+    <h3>Live Tracking Details</h3>
+    <pre id="output">Waiting for tracking updates...</pre>
+
+    <script>
+        let socket = null;
+
+        function log(message) {
+            const output = document.getElementById("output");
+            output.textContent =
+                new Date().toLocaleTimeString() + " - " + message +
+                "\n\n" + output.textContent;
+        }
+
+        function connectTracking() {
+            disconnectTracking();
+
+            const token = document.getElementById("token").value.trim();
+            const orderId = document.getElementById("orderId").value.trim();
+
+            if (!token || !orderId || Number(orderId) < 1) {
+                log("Please enter a valid access token and order ID.");
+                return;
+            }
+
+            const protocol =
+                location.protocol === "https:" ? "wss:" : "ws:";
+
+            const url =
+                `${protocol}//${location.host}/ws/orders/${orderId}` +
+                `?token=${encodeURIComponent(token)}`;
+
+            document.getElementById("status").textContent =
+                "Status: Connecting...";
+
+            const currentSocket = new WebSocket(url);
+            socket = currentSocket;
+
+            currentSocket.onopen = () => {
+                document.getElementById("status").textContent =
+                    "Status: Connected to order " + orderId;
+                log("Connected to order " + orderId);
+            };
+
+            currentSocket.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+
+                    if (data.event === "order_tracking") {
+                        const partner = data.partner || {};
+
+                        const details = {
+                            order_id: data.order_id,
+                            order_number: data.order_number,
+                            status: data.status,
+                            partner_name: partner.name || "Not assigned",
+                            vehicle_type: partner.vehicle_type || "N/A",
+                            vehicle_number: partner.vehicle_number || "N/A",
+                            partner_latitude: partner.latitude ?? "Unavailable",
+                            partner_longitude: partner.longitude ?? "Unavailable",
+                            distance_remaining_km:
+                                data.distance_remaining_km ?? "Unavailable",
+                            estimated_arrival_minutes:
+                                data.estimated_arrival_minutes ?? "Unavailable",
+                            last_location_at: partner.last_location_at || "N/A",
+                            updated_at: data.updated_at
+                        };
+
+                        log(JSON.stringify(details, null, 2));
+                    } else {
+                        log(JSON.stringify(data, null, 2));
+                    }
+                } catch (error) {
+                    log("Received message: " + event.data);
+                }
+            };
+
+            currentSocket.onerror = () => {
+                log("WebSocket error. Check the server logs.");
+            };
+
+            currentSocket.onclose = (event) => {
+                if (socket === currentSocket) {
+                    socket = null;
+                    document.getElementById("status").textContent =
+                        "Status: Disconnected";
+                }
+
+                log(`Connection closed. Code: ${event.code}`);
+            };
+        }
+
+        function disconnectTracking() {
+            if (socket) {
+                const oldSocket = socket;
+                socket = null;
+                oldSocket.close();
+            }
+
+            document.getElementById("status").textContent =
+                "Status: Disconnected";
+        }
+    </script>
+</body>
+</html>
+
